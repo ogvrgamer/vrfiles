@@ -1,0 +1,590 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>OG VR GAMER TEST</title>
+    <!-- Include the figmin meta tag to receive the FigminReady event -->
+    <meta name="figmin">
+    <style>
+    :root {
+        --accent: #3b82f6;
+        --accent-soft: rgba(59, 130, 246, 0.15);
+        --bg: #020617;
+        --text-muted: #9ca3af;
+    }
+
+    * {
+        box-sizing: border-box;
+    }
+
+    html, body {
+        margin: 0;
+        padding: 0;
+        height: 100%;
+        overflow: hidden; /* no scrollbars */
+    }
+
+    body {
+        font-family: system-ui, -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif;
+        background: radial-gradient(circle at top, #0f172a 0, #020617 45%, #000 100%);
+        color: #f9fafb;
+        display: flex;
+        align-items: center;
+        justify-content: center;
+        text-align: center;
+    }
+
+    .card {
+        padding: 24px 28px;
+        border-radius: 20px;
+        background: rgba(15, 23, 42, 0.95);
+        box-shadow: 0 18px 45px rgba(15, 23, 42, 0.9);
+        border: 1px solid rgba(148, 163, 184, 0.35);
+        max-width: 420px;
+        width: min(90vw, 420px);
+    }
+
+    h1 {
+        margin: 0 0 8px;
+        font-size: 26px;
+        letter-spacing: 0.04em;
+    }
+
+    .subtitle {
+        margin: 0 0 20px;
+        font-size: 14px;
+        color: var(--text-muted);
+    }
+
+    #resetCenterBtn {
+        margin-bottom: 18px;
+        padding: 12px 26px;
+        font-size: 16px;
+        font-weight: 600;
+        color: #fff;
+        background: var(--accent);     /* nice blue */
+        border: none;
+        border-radius: 999px;          /* pill */
+        cursor: pointer;
+        box-shadow: 0 10px 25px rgba(37, 99, 235, 0.55);
+        transform: translateZ(0);
+    }
+
+    #resetCenterBtn:hover {
+        background: #2563eb;           /* darker blue on hover */
+    }
+
+    #resetCenterBtn:active {
+        background: #1d4ed8;           /* even darker when pressed */
+        transform: translateY(1px);
+        box-shadow: 0 6px 18px rgba(30, 64, 175, 0.85);
+    }
+
+    .controls {
+        padding: 14px 16px;
+        border-radius: 14px;
+        background: var(--accent-soft);
+        text-align: left;
+        font-size: 14px;
+        line-height: 1.5;
+    }
+
+    .controls-title {
+        text-transform: uppercase;
+        letter-spacing: 0.12em;
+        font-size: 11px;
+        margin-bottom: 6px;
+        color: #bfdbfe;
+    }
+
+    .control-row {
+        display: flex;
+        justify-content: space-between;
+        gap: 16px;
+        padding: 2px 0;
+    }
+
+    .control-label {
+        color: #e5e7eb;
+    }
+
+    .control-key {
+        font-family: ui-monospace, SFMono-Regular, Menlo, Monaco, Consolas, "Liberation Mono", "Courier New", monospace;
+        font-size: 12px;
+        padding: 3px 8px;
+        border-radius: 999px;
+        border: 1px solid rgba(191, 219, 254, 0.6);
+        color: #dbeafe;
+        white-space: nowrap;
+        background: rgba(15, 23, 42, 0.8);
+    }
+
+        .card {
+        padding: 24px 28px;
+        border-radius: 20px;
+        background: rgba(15, 23, 42, 0.95);
+        box-shadow: 0 18px 45px rgba(15, 23, 42, 0.9);
+        border: 1px solid rgba(148, 163, 184, 0.35);
+        max-width: 420px;
+        width: min(90vw, 420px);
+
+        /* ⬇️ add these ⬇️ */
+        transform: scale(1.75);
+        transform-origin: center center;
+    }
+    </style>
+</head>
+<body>
+    <div class="card">
+        <h1>Playable character</h1>
+        <p class="subtitle">
+            Click the lightning bolt to connect to the robot.<br/>
+            Turn on room mapping for an extra magic touch.<br/>
+            Learn more at www.figmin.com/api
+        </p>
+
+        <button id="resetCenterBtn" type="button">Reset</button>
+
+        <div class="controls">
+        <div class="controls-title">Controls</div>
+
+        <div class="control-row">
+            <span class="control-label">Move</span>
+            <span class="control-key">Left thumbstick</span>
+        </div>
+
+        <div class="control-row">
+            <span class="control-label">Jump</span>
+            <span class="control-key">A</span>
+        </div>
+
+        <div class="control-row">
+            <span class="control-label">Run</span>
+            <span class="control-key">Press &amp; hold left thumbstick</span>
+        </div>
+        </div>
+    </div>
+
+    <script>
+        let character = null, camera = null;
+        let isConnected = false;
+        let characterReady = false;
+        //this is the original scale value that comes with the character once it initializes 
+        //for the requested size (0.163).  
+        let characterReferenceScale = 1;
+        // if the player is grabbing the character
+        let isGrabbed = false; 
+        // Locomotion state
+        let verticalVelocity = 0;
+        const jumpVelocity   = 1.8;   // tweak for height you like
+        let modelSize = null;  // assigned after model loads
+        let forwardBlocked = false;
+        let ceilingBlocked = false;
+        let movementReferenceDirection = null;
+
+        // Raycast cache (result from previous frame)
+        let groundHit = null;  // { point, distance } | null
+        const State = { GROUNDED: 0, FALLING: 1, LANDING: 2 };
+        let animState = State.GROUNDED;
+
+        // Tunables
+        const walkSpeed     = 0.3;
+        const runMultiplier = 1.5;
+        //this value helps sync actual move speed with animation speed
+        const animationStrideMultiplier = 0.6745; 
+        // Mars gravity ≈ 0.38 g, this is figmin's default gravity
+        // TODO: replace for the actual scene gravity when we have it available to read
+        const gravity       = 3.7;   
+
+        const idleAnim = "Idle";
+        const walkAnim = "Walking";
+        const runAnim = "Running";
+        const jumpAnim = "Jump";
+        const waveAnim = "Wave";
+        const punchAnim = "Punch";
+        const thumbsUpAnim = "ThumbsUp";
+        const yesAnim = "Yes";
+        const noAnim = "No";
+        const danceAnim = "Dance";
+
+        function init() {
+            //require spatial app mode
+            if (!figmin.isSpatialApp()) {
+                figmin.requireSpatialApp();
+                return;
+            }
+
+            const model_url = "www.figmin.com/api/robot_model.glb";
+            character = figmin.createObject(figmin.ObjectType.MODEL3D, {
+                        url: model_url,
+                        position: figmin.getWindowSpawnPosition(0.2, "right"),
+                        rotation: figmin.getWindow().transform.rotation,
+                        targetSize: 0.163 //This will be the height in meters of the character
+                    });
+
+            character.onStart((obj) => {                  
+                characterReady = true;
+                //start idle i guess?
+                character.model3d.play(idleAnim);
+                //remember what scale it came with originally
+                characterReferenceScale = character.transform.scale;
+
+                // Hookup the reset character button
+                document.getElementById('resetCenterBtn')?.addEventListener('click', resetCharacter);
+            });                    
+
+            //when the local player grabs the object, we'll pause controls
+            const rightHand = figmin.getPlayerBodypart(figmin.getLocalPlayer(), figmin.BodypartType.RIGHT_HAND);
+            const leftHand = figmin.getPlayerBodypart(figmin.getLocalPlayer(), figmin.BodypartType.LEFT_HAND);
+            //This will be the onGrabChanged callback for each bodypart
+            function onObjectGrabbed(aHand, isGrabbing, targetName, targetObj) {
+                if (targetObj === character) {
+                    //They grabbed our character, set the flag
+                    isGrabbed = isGrabbing;
+                }
+            }
+            //register callbacks
+            rightHand.bodypart.onGrabChanged(onObjectGrabbed);
+            leftHand.bodypart.onGrabChanged(onObjectGrabbed);
+
+            camera = figmin.getCamera();
+
+            figmin.enableInputConnect("Playable character", [
+                figmin.InputCode.A, figmin.InputCode.B, 
+                figmin.InputCode.X, figmin.InputCode.Y,
+                figmin.InputCode.SELECT_LEFT, figmin.InputCode.SELECT_RIGHT,
+                figmin.InputCode.GRIP_LEFT, figmin.InputCode.GRIP_RIGHT,
+                figmin.InputCode.AXIS_X_RIGHT, figmin.InputCode.AXIS_Y_RIGHT,
+                figmin.InputCode.AXIS_X_LEFT, figmin.InputCode.AXIS_Y_LEFT,
+                figmin.InputCode.THUMB_LEFT, figmin.InputCode.THUMB_RIGHT
+            ], onInputConnectionChanged, character);
+
+            //for development we can use this to auto connect
+            //figmin.connectToInputRequest();
+
+            figmin.setUpdateFunction(update);
+        };
+        function resetCharacter() {
+            character.transform.position = figmin.getWindowSpawnPosition(0.2, "right");
+        }
+
+        function setAnimState(newState) {
+            animState = newState;
+            //no expressions for now, not sure if we'll support morph targets
+        }
+
+        function playJump() {
+            //normal playback speed without loop
+            character.model3d.play(jumpAnim, false, 1, 0);
+        }
+
+        function playFall() {
+            //falling is a freezed frame at half way of jump
+            character.model3d.play(jumpAnim, true, 0, 0.5);
+        }
+
+        function playLand() {
+            //normal playback speed without loop starting from half way
+            character.model3d.play(jumpAnim, false, 1, 0.5);
+        }
+
+        function applyVerticalVelocity(delta) {
+            verticalVelocity -= gravity * delta;
+            //dont go over ceiling
+            if (ceilingBlocked && verticalVelocity > 0) {
+                verticalVelocity = 0;
+            }
+
+            character.transform.position = {
+                x: character.transform.position.x,
+                y: character.transform.position.y + verticalVelocity * delta,
+                z: character.transform.position.z
+            };
+        }
+
+        function update(delta) {
+            if (!isConnected || !characterReady || isGrabbed)
+                return;
+
+            /* geometry helpers */
+            const halfH   = character.transform.size.y * 0.5;
+            const dropGap = halfH * 0.10;                // >10 % ⇒ real drop
+            const rampTol = halfH * 0.25;                // ≤25 % keeps grounded
+            const walkSpd = walkSpeed;
+            const runSpd  = walkSpeed * runMultiplier;
+            //IMPORTANT: the scale we care about is not the current scale, 
+            //but how much it has scaled compare to the original size
+            const scale =  character.transform.scale / characterReferenceScale;
+
+            /* horizontal steering (air & ground) */
+            const rawInputX = figmin.getInput(figmin.InputCode.AXIS_X_LEFT);
+            const rawInputY = figmin.getInput(figmin.InputCode.AXIS_Y_LEFT);
+            const deadzone = 0.15;
+            // Apply deadzone
+            const ix = Math.abs(rawInputX) < deadzone ? 0 : rawInputX;
+            const iy = Math.abs(rawInputY) < deadzone ? 0 : rawInputY;
+            const moving = ix !== 0 || iy !== 0;
+            const running = figmin.getInput(figmin.InputCode.THUMB_LEFT) > 0.5;
+            const curSpd  = (running ? runSpd: walkSpd) * scale;
+
+            // hard floor at y = halfH minus some epsilon
+            if (character.transform.position.y < (halfH - 0.00001)) {
+                character.transform.position = { x: character.transform.position.x, 
+                    y: halfH, z: character.transform.position.z };
+                verticalVelocity = 0;
+                playLand();
+                setAnimState(State.GROUNDED);
+            }
+
+            /* raycast info */
+            let surfaceY = null;
+            let gap      = Infinity;
+            if (groundHit) {
+                surfaceY = groundHit.point.y + halfH;
+                gap      = Math.abs(character.transform.position.y - surfaceY);
+            }
+            const groundedNow = gap <= rampTol;
+
+            /* FSM */
+            switch (animState) {
+                /* GROUNDED ------------------------------------------------ */
+                case State.GROUNDED: {
+                    verticalVelocity = 0;
+
+                    if (figmin.getInputDown(figmin.InputCode.A)) {
+                        //the velocity will depend on our scale, but it's not linear
+                        verticalVelocity = jumpVelocity * Math.sqrt(scale);
+                        playJump();
+                        setAnimState(State.JUMPING);
+                    } else if (!groundedNow && gap > dropGap) {
+                        playFall();
+                        setAnimState(State.FALLING);
+                    } else if (surfaceY !== null) {
+                        character.transform.position = { x: character.transform.position.x, 
+                            y: surfaceY, z: character.transform.position.z };
+                    }
+                    break;
+                }
+
+                /* JUMPING (0–50 %) --------------------------------------- */
+                case State.JUMPING: {
+                    applyVerticalVelocity(delta);
+                    if (character.model3d.getCurrentAnimationName() === jumpAnim && 
+                        character.model3d.getCurrentAnimationNormalizedTime() >=  0.5) {
+                            if (groundedNow) { playLand(); setAnimState(State.LANDING); }
+                            else             { playFall(); setAnimState(State.FALLING); }
+                    }
+                    
+                    break;
+                }
+
+                /* FALLING (frozen 50 %) ---------------------------------- */
+                case State.FALLING: {
+                    if (groundedNow) {
+                        playLand();
+                        setAnimState(State.LANDING);
+                    } else {
+                        applyVerticalVelocity(delta);
+                    }
+                    break;
+                }
+
+                /* LANDING (50 %→100 %) ---------------------------------- */
+                case State.LANDING: {
+                    if (groundedNow && surfaceY !== null) {
+                        /* keep feet glued while clip finishes */
+                        character.transform.position = { x: character.transform.position.x, 
+                            y: surfaceY, z: character.transform.position.z };
+                    } else if (!groundedNow && gap > dropGap) {
+                        /* walked off a ledge mid‑land → go back to Fall pose */
+                        playFall();
+                        setAnimState(State.FALLING);
+                        break;
+                    }
+                    //if we are moving we cancel falling and switch to grounded, 
+                    //same story if the land clip ended
+                    if (moving || (character.model3d.getCurrentAnimationName() === jumpAnim && 
+                        character.model3d.getCurrentAnimationNormalizedTime() >= 1)) { 
+                            setAnimState(State.GROUNDED);
+                    }
+                    
+                    break;
+                }
+            }
+
+            const currentAnimation = character.model3d.getCurrentAnimationName();
+
+            if (moving) {
+                const a = character.transform.position;
+
+                // On first movement, lock the direction
+                if (movementReferenceDirection === null) {
+                    const p = camera.transform.position;
+                    const dx = a.x - p.x, dz = a.z - p.z;
+                    const len = Math.hypot(dx, dz) || 1;
+                    const nx = dx / len, nz = dz / len;
+
+                    movementReferenceDirection = {
+                    forward: { x: nx, y: 0, z: nz },
+                    right:   { x: nz, y: 0, z: -nx }
+                    };
+                }
+
+                const { forward, right } = movementReferenceDirection;
+
+                const vxNoDelta = (ix * right.x + iy * forward.x) * curSpd;
+                const vzNoDelta = (ix * right.z + iy * forward.z) * curSpd;
+                const vx = vxNoDelta * delta;
+                const vz = vzNoDelta * delta;
+
+                //always rotate to face movement direction
+                character.transform.rotation = { x: 0, y: Math.atan2(vx, vz) * 180 / Math.PI, z: 0 };
+
+                if (!forwardBlocked) {
+                    //move only if not blocked
+                    character.transform.position = { x: a.x + vx, y: a.y, z: a.z + vz };
+                    if (animState === State.GROUNDED &&
+                        (currentAnimation === walkAnim || currentAnimation === runAnim)) {
+                        //IMPORTANT: to adjust timescale we need to use values without delta applied, 
+                        // because the mixer already takes that into consideration
+                        const moveSpeed = Math.sqrt(vxNoDelta*vxNoDelta + vzNoDelta*vzNoDelta);
+                        character.model3d.setAnimationSpeed(moveSpeed / (curSpd * animationStrideMultiplier));
+                    }
+                }
+            } else {
+                // Reset direction when input is released
+                movementReferenceDirection = null;
+            }
+
+            /* emotes & locomotion (ground only) */
+            if (animState === State.GROUNDED) {
+                //trigger emotes only if not moving
+                if (!moving) {
+                    if (figmin.getInputDown(figmin.InputCode.X)) { 
+                        character.model3d.play(punchAnim, false);
+                    }
+                    if (figmin.getInputDown(figmin.InputCode.Y)) {
+                        character.model3d.play(waveAnim, false);
+                    }
+                    if (figmin.getInputDown(figmin.InputCode.B)) {
+                        character.model3d.play(thumbsUpAnim, false);
+                    }
+                    if (figmin.getInputDown(figmin.InputCode.GRIP_LEFT)) {
+                        character.model3d.play(noAnim, false);
+                    }
+                    if (figmin.getInputDown(figmin.InputCode.GRIP_RIGHT)) {
+                        character.model3d.play(yesAnim, false);
+                    }
+                    if (figmin.getInputDown(figmin.InputCode.THUMB_RIGHT)) {
+                        character.model3d.play(danceAnim, false);
+                    }
+                }
+
+                if (moving) {
+                    //Cancel emotes if moving, always force locomotion animation
+                    const desired = running ? runAnim: walkAnim;
+                    if (desired && currentAnimation !== desired) {
+                        character.model3d.play(desired);
+                    }
+                } else if (currentAnimation !== idleAnim) {
+                    const looping = character.model3d.isLooping();
+                    const animTime = character.model3d.getCurrentAnimationNormalizedTime();
+                    //If current anim is non-looping and finished → go idle
+                    if (!looping && animTime >= 1) {
+                        character.model3d.play(idleAnim);
+                    }
+                    //OR if current anim is a locomotion loop (walk/run) but we're standing → force idle
+                    else if (looping && (currentAnimation === walkAnim || currentAnimation === runAnim)) {
+                        character.model3d.play(idleAnim);
+                    }
+                }
+            }
+
+            /* schedule next raycast */
+            scheduleRaycasts();
+        }
+
+        function scheduleRaycasts() {
+            if (!character) return;
+
+            const height = character.transform.size.y;
+            const origin = character.transform.position;
+            const radius = character.transform.size.x * 0.3;  // ~30% of width
+
+            // IMPORTANT: All of the callbacks from raycast execute with a delay (on the next frame).
+            // Ground detection
+            figmin.raycastSphere(
+                {
+                    origin: origin,
+                    direction: { x: 0, y: -1, z: 0 },
+                    radius: radius, 
+                    maxDistance: height * 0.6,
+                    layers: [figmin.Layers.STATIC_OBJ, figmin.Layers.SURFACE, 
+                            figmin.Layers.PHYSICS_OBJ, figmin.Layers.UI],
+                    lookupObject: false
+                },
+                (result) => {
+                    groundHit = result ? { point: result.point, distance: result.distance } : null;
+                    //if (result) figmin.debugDraw([origin, result.point], "red");
+                }
+            );
+
+            //Correct forward vector based on character rotation
+            const yaw = character.transform.rotation.y;
+            const rad = yaw * Math.PI / 180;
+            const forward = {
+                x: Math.sin(rad),
+                y: 0,
+                z: Math.cos(rad)
+            };
+
+            const maxDistance = radius * 1.25;                 // short sweep ahead
+
+            // Forward wall detection
+            figmin.raycastSphere(
+                {
+                    origin: origin,
+                    direction: forward,
+                    radius: radius,
+                    maxDistance: maxDistance,
+                    layers: [figmin.Layers.STATIC_OBJ, figmin.Layers.SURFACE, figmin.Layers.PHYSICS_OBJ]
+                },
+                (result) => {
+                    if (result && result.normal && result.normal.y < 0.4) {
+                        forwardBlocked = true;
+                        //figmin.debugDraw([origin, result.point], "blue");
+                    } else {
+                        forwardBlocked = false;
+                    }
+                }
+            );
+
+            //Ceiling cast: straight up
+            figmin.raycastSphere(
+                {
+                    origin: origin,
+                    direction: { x: 0, y: 1, z: 0 },
+                    radius: radius,
+                    maxDistance: height * 0.5,
+                    //TODO: figmin.Layers.STATIC_OBJ should be here but the ui of 
+                    //the browser has this layer 
+                    layers: [ figmin.Layers.SURFACE, figmin.Layers.PHYSICS_OBJ]
+                },
+                (result) => {
+                    ceilingBlocked = !!result;
+                    //if (result) figmin.debugDraw([origin, result.point], "orange");
+                }
+            );
+        }
+
+
+        function onInputConnectionChanged(state) {
+            isConnected = state;
+        }
+        //wait for figmin ready event
+        document.addEventListener("FigminReady", init);
+
+    </script>
+</body>
+</html>
